@@ -16,6 +16,15 @@
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 #endif
+
+#define IDM_SETTINGS			32771
+#define IDM_START				32772
+#define IDD_SETTINGS_DIALOG		3000
+#define IDC_OPPONENT_COUNT		1000
+#define IDC_KEY_UP_BTN			1001
+#define IDC_KEY_DOWN_BTN		1002
+#define IDC_KEY_LEFT_BTN		1003
+#define IDC_KEY_RIGHT_BTN		1004
 // 新对象的下一组默认值
 //
 #ifdef APSTUDIO_INVOKED
