@@ -516,7 +516,7 @@ void DrawGame(HDC hdc, HWND hWnd)
     LineTo(hdc, (int)(start.x - 30), (int)(start.y + g_trackPath[0].width/2));
     
     for (int i = 0; i < 6; i++) {
-        int yOffset = -g_trackPath[0].width/2 + i * 20;
+        int yOffset = (int)(-g_trackPath[0].width/2) + i * 20;
         MoveToEx(hdc, (int)(start.x - 30), (int)(start.y + yOffset), nullptr);
         LineTo(hdc, (int)(start.x - 30), (int)(start.y + yOffset + 10));
     }
