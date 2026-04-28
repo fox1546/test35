@@ -203,26 +203,65 @@ std::wstring GetKeyName(int vk)
     return ss.str();
 }
 
+static int* g_pendingKey = nullptr;
+static HWND g_hPendingDlg = nullptr;
+static int g_pendingCtrlId = 0;
+static GameSettings g_tempSettings;
+
+LRESULT CALLBACK KeyHookProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode >= 0 && g_pendingKey && g_hPendingDlg) {
+        KBDLLHOOKSTRUCT* pKeyStruct = (KBDLLHOOKSTRUCT*)lParam;
+        
+        if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+            int vkCode = (int)pKeyStruct->vkCode;
+            
+            if (vkCode != VK_SHIFT && vkCode != VK_CONTROL && vkCode != VK_MENU &&
+                vkCode != VK_LSHIFT && vkCode != VK_RSHIFT && 
+                vkCode != VK_LCONTROL && vkCode != VK_RCONTROL &&
+                vkCode != VK_LMENU && vkCode != VK_RMENU) {
+                
+                *g_pendingKey = vkCode;
+                SetDlgItemText(g_hPendingDlg, g_pendingCtrlId, GetKeyName(vkCode).c_str());
+                
+                g_pendingKey = nullptr;
+                g_hPendingDlg = nullptr;
+                g_pendingCtrlId = 0;
+                
+                return 1;
+            }
+        }
+    }
+    
+    return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
+static HHOOK g_keyHook = nullptr;
+
 INT_PTR CALLBACK SettingsDlg(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    static int* currentKey = nullptr;
-    
     switch (message)
     {
     case WM_INITDIALOG:
         {
+            g_tempSettings = g_settings;
+            
             HWND hCombo = GetDlgItem(hDlg, IDC_OPPONENT_COUNT);
             for (int i = 1; i <= MAX_OPPONENTS; i++) {
                 std::wostringstream ss;
                 ss << i;
                 ComboBox_AddString(hCombo, ss.str().c_str());
             }
-            ComboBox_SetCurSel(hCombo, g_settings.opponentCount - 1);
+            ComboBox_SetCurSel(hCombo, g_tempSettings.opponentCount - 1);
             
-            SetDlgItemText(hDlg, IDC_KEY_UP, GetKeyName(g_settings.keyUp).c_str());
-            SetDlgItemText(hDlg, IDC_KEY_DOWN, GetKeyName(g_settings.keyDown).c_str());
-            SetDlgItemText(hDlg, IDC_KEY_LEFT, GetKeyName(g_settings.keyLeft).c_str());
-            SetDlgItemText(hDlg, IDC_KEY_RIGHT, GetKeyName(g_settings.keyRight).c_str());
+            SetDlgItemText(hDlg, IDC_KEY_UP_BTN, GetKeyName(g_tempSettings.keyUp).c_str());
+            SetDlgItemText(hDlg, IDC_KEY_DOWN_BTN, GetKeyName(g_tempSettings.keyDown).c_str());
+            SetDlgItemText(hDlg, IDC_KEY_LEFT_BTN, GetKeyName(g_tempSettings.keyLeft).c_str());
+            SetDlgItemText(hDlg, IDC_KEY_RIGHT_BTN, GetKeyName(g_tempSettings.keyRight).c_str());
+            
+            if (!g_keyHook) {
+                g_keyHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyHookProc, GetModuleHandle(nullptr), 0);
+            }
         }
         return (INT_PTR)TRUE;
 
@@ -231,49 +270,78 @@ INT_PTR CALLBACK SettingsDlg(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPar
             int wmId = LOWORD(wParam);
             int notifyCode = HIWORD(wParam);
             
-            if (wmId == IDC_KEY_UP || wmId == IDC_KEY_DOWN || 
-                wmId == IDC_KEY_LEFT || wmId == IDC_KEY_RIGHT) {
-                if (notifyCode == EN_SETFOCUS) {
-                    switch (wmId) {
-                        case IDC_KEY_UP: currentKey = &g_settings.keyUp; break;
-                        case IDC_KEY_DOWN: currentKey = &g_settings.keyDown; break;
-                        case IDC_KEY_LEFT: currentKey = &g_settings.keyLeft; break;
-                        case IDC_KEY_RIGHT: currentKey = &g_settings.keyRight; break;
+            if (notifyCode == BN_CLICKED) {
+                if (wmId == IDC_KEY_UP_BTN || wmId == IDC_KEY_DOWN_BTN || 
+                    wmId == IDC_KEY_LEFT_BTN || wmId == IDC_KEY_RIGHT_BTN) {
+                    
+                    if (g_pendingKey) {
+                        g_pendingKey = nullptr;
+                        g_hPendingDlg = nullptr;
+                        g_pendingCtrlId = 0;
                     }
-                    SetDlgItemText(hDlg, wmId, L"按新键...");
+                    
+                    switch (wmId) {
+                        case IDC_KEY_UP_BTN: 
+                            g_pendingKey = &g_tempSettings.keyUp; 
+                            g_pendingCtrlId = IDC_KEY_UP_BTN;
+                            break;
+                        case IDC_KEY_DOWN_BTN: 
+                            g_pendingKey = &g_tempSettings.keyDown; 
+                            g_pendingCtrlId = IDC_KEY_DOWN_BTN;
+                            break;
+                        case IDC_KEY_LEFT_BTN: 
+                            g_pendingKey = &g_tempSettings.keyLeft; 
+                            g_pendingCtrlId = IDC_KEY_LEFT_BTN;
+                            break;
+                        case IDC_KEY_RIGHT_BTN: 
+                            g_pendingKey = &g_tempSettings.keyRight; 
+                            g_pendingCtrlId = IDC_KEY_RIGHT_BTN;
+                            break;
+                    }
+                    g_hPendingDlg = hDlg;
+                    SetDlgItemText(hDlg, wmId, L"请按新键...");
                 }
-            }
-            
-            if (wmId == IDOK) {
-                HWND hCombo = GetDlgItem(hDlg, IDC_OPPONENT_COUNT);
-                int sel = ComboBox_GetCurSel(hCombo);
-                if (sel >= 0) {
-                    g_settings.opponentCount = sel + 1;
+                else if (wmId == IDOK) {
+                    HWND hCombo = GetDlgItem(hDlg, IDC_OPPONENT_COUNT);
+                    int sel = ComboBox_GetCurSel(hCombo);
+                    if (sel >= 0) {
+                        g_tempSettings.opponentCount = sel + 1;
+                    }
+                    
+                    g_settings = g_tempSettings;
+                    
+                    if (g_keyHook) {
+                        UnhookWindowsHookEx(g_keyHook);
+                        g_keyHook = nullptr;
+                    }
+                    g_pendingKey = nullptr;
+                    g_hPendingDlg = nullptr;
+                    
+                    EndDialog(hDlg, LOWORD(wParam));
+                    return (INT_PTR)TRUE;
                 }
-                EndDialog(hDlg, LOWORD(wParam));
-                return (INT_PTR)TRUE;
-            }
-            else if (wmId == IDCANCEL) {
-                EndDialog(hDlg, LOWORD(wParam));
-                return (INT_PTR)TRUE;
+                else if (wmId == IDCANCEL) {
+                    if (g_keyHook) {
+                        UnhookWindowsHookEx(g_keyHook);
+                        g_keyHook = nullptr;
+                    }
+                    g_pendingKey = nullptr;
+                    g_hPendingDlg = nullptr;
+                    
+                    EndDialog(hDlg, LOWORD(wParam));
+                    return (INT_PTR)TRUE;
+                }
             }
         }
         break;
         
-    case WM_KEYDOWN:
-        if (currentKey && wParam != VK_SHIFT && wParam != VK_CONTROL && wParam != VK_MENU) {
-            *currentKey = (int)wParam;
-            int ctrlId = 0;
-            if (currentKey == &g_settings.keyUp) ctrlId = IDC_KEY_UP;
-            else if (currentKey == &g_settings.keyDown) ctrlId = IDC_KEY_DOWN;
-            else if (currentKey == &g_settings.keyLeft) ctrlId = IDC_KEY_LEFT;
-            else if (currentKey == &g_settings.keyRight) ctrlId = IDC_KEY_RIGHT;
-            
-            if (ctrlId > 0) {
-                SetDlgItemText(hDlg, ctrlId, GetKeyName((int)wParam).c_str());
-            }
-            currentKey = nullptr;
+    case WM_DESTROY:
+        if (g_keyHook) {
+            UnhookWindowsHookEx(g_keyHook);
+            g_keyHook = nullptr;
         }
+        g_pendingKey = nullptr;
+        g_hPendingDlg = nullptr;
         break;
     }
     return (INT_PTR)FALSE;
@@ -665,6 +733,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         g_keyStates[wParam] = false;
         break;
         
+    case WM_ERASEBKGND:
+        return (LRESULT)TRUE;
+        
     case WM_TIMER:
         UpdateGame();
         InvalidateRect(hWnd, nullptr, FALSE);
@@ -675,46 +746,59 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
             
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            int width = rect.right - rect.left;
+            int height = rect.bottom - rect.top;
+            
+            HDC hMemDC = CreateCompatibleDC(hdc);
+            HBITMAP hMemBitmap = CreateCompatibleBitmap(hdc, width, height);
+            HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemDC, hMemBitmap);
+            
             if (g_gameState == GAME_PLAYING || g_gameState == GAME_FINISHED) {
-                DrawGame(hdc, hWnd);
+                DrawGame(hMemDC, hWnd);
             } else {
-                RECT rect;
-                GetClientRect(hWnd, &rect);
                 HBRUSH hBrush = CreateSolidBrush(RGB(34, 139, 34));
-                FillRect(hdc, &rect, hBrush);
+                FillRect(hMemDC, &rect, hBrush);
                 DeleteObject(hBrush);
                 
                 HFONT hFont = CreateFontW(48, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                            CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
                                            DEFAULT_PITCH | FF_SWISS, L"Arial");
-                HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+                HFONT hOldFont = (HFONT)SelectObject(hMemDC, hFont);
                 
-                SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, RGB(255, 255, 255));
+                SetBkMode(hMemDC, TRANSPARENT);
+                SetTextColor(hMemDC, RGB(255, 255, 255));
                 
                 std::wstring title = L"赛车游戏";
-                TextOutW(hdc, 320, 150, title.c_str(), (int)title.length());
+                TextOutW(hMemDC, 320, 150, title.c_str(), (int)title.length());
                 
                 HFONT hSmallFont = CreateFontW(20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                                CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
                                                DEFAULT_PITCH | FF_SWISS, L"Arial");
-                SelectObject(hdc, hSmallFont);
+                SelectObject(hMemDC, hSmallFont);
                 
                 std::wstring instructions = L"请点击 目录->设置 配置游戏，然后点击 目录->开始 开始游戏";
-                TextOutW(hdc, 150, 250, instructions.c_str(), (int)instructions.length());
+                TextOutW(hMemDC, 150, 250, instructions.c_str(), (int)instructions.length());
                 
                 std::wstring instructions2 = L"玩家: 红色车辆（黄色圆圈标记），用方向键控制";
-                TextOutW(hdc, 200, 300, instructions2.c_str(), (int)instructions2.length());
+                TextOutW(hMemDC, 200, 300, instructions2.c_str(), (int)instructions2.length());
                 
                 std::wstring instructions3 = L"完成3圈即可获胜，注意不要撞到赛道边缘！";
-                TextOutW(hdc, 220, 350, instructions3.c_str(), (int)instructions3.length());
+                TextOutW(hMemDC, 220, 350, instructions3.c_str(), (int)instructions3.length());
                 
-                SelectObject(hdc, hOldFont);
+                SelectObject(hMemDC, hOldFont);
                 DeleteObject(hFont);
                 DeleteObject(hSmallFont);
             }
+            
+            BitBlt(hdc, 0, 0, width, height, hMemDC, 0, 0, SRCCOPY);
+            
+            SelectObject(hMemDC, hOldBitmap);
+            DeleteObject(hMemBitmap);
+            DeleteDC(hMemDC);
             
             EndPaint(hWnd, &ps);
         }

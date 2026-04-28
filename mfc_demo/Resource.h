@@ -21,10 +21,10 @@
 #define IDM_START				32772
 #define IDD_SETTINGS_DIALOG		3000
 #define IDC_OPPONENT_COUNT		1000
-#define IDC_KEY_UP				1001
-#define IDC_KEY_DOWN			1002
-#define IDC_KEY_LEFT			1003
-#define IDC_KEY_RIGHT			1004
+#define IDC_KEY_UP_BTN			1001
+#define IDC_KEY_DOWN_BTN		1002
+#define IDC_KEY_LEFT_BTN		1003
+#define IDC_KEY_RIGHT_BTN		1004
 // 新对象的下一组默认值
 //
 #ifdef APSTUDIO_INVOKED
